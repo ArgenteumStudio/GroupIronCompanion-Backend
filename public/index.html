@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#141b1a">
+  <title>{{CLAN_NAME}} | {{SITE_TITLE}}</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/world-map.css">
+  <link rel="stylesheet" href="/members.css">
+  <link rel="stylesheet" href="/theme.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="rail">
+    <a class="brand" href="/" aria-label="{{CLAN_NAME}} home"><img class="clan-logo" src="/logo" alt="{{CLAN_NAME}} clan logo"></a>
+    <div class="rail-label" data-brand="tagline">{{TAGLINE}}</div>
+    <nav aria-label="Dashboard sections">
+      <a href="#overview" class="active">01 <span>Overview</span></a>
+      <a href="#bank">02 <span>Banks</span></a>
+      <a href="#locations">03 <span>Where's everyone?</span></a>
+      <a href="#activity">04 <span>Activity</span></a>
+      <a href="#manage-group" id="manage-group-link" hidden>05 <span>Manage group</span></a>
+      <a href="#settings" id="settings-link" hidden>06 <span>Settings</span></a>
+    </nav>
+    <div class="rail-foot"><span class="lock-dot"></span> PRIVATE GROUP SPACE<br><small>Created using intellectual property belonging to Jagex Limited under the terms of Jagex's Fan Content Policy. This content is not endorsed by or affiliated with Jagex.</small></div>
+  </aside>
+  <main>
+    <header class="topbar"><span><span data-brand="clanName">{{CLAN_NAME}}</span> <span class="slash">/</span> GROUP TRACKER</span><div class="topbar-actions"><button id="refresh" class="quiet" hidden>Refresh data</button><button id="logout" class="quiet" hidden>Lock</button></div></header>
+    <section id="login" class="login-card">
+      <div class="eyebrow">MEMBERS ONLY</div>
+      <h1 data-brand="heading">{{HEADING}}</h1>
+      <p data-brand="intro">{{INTRO}}</p>
+      <p class="fine"><strong>Privacy warning:</strong> This tracker is operated by the person hosting this server, not Jagex or RuneLite. Client connection is opt-in. When enabled, your RuneScape name, skill stats and quest points are sent to that operator. Additional switches share banks/group storage, position/world, live XP, your own GIM chat and gameplay alerts. The operator can read, store and share uploads; enabled chat/alerts may also be sent to Discord. Member viewing permissions do not hide data from the operator. Only connect to a host you trust. Disabling sharing or locking this page does not delete previous uploads; ask the host to remove them. Never enter your RuneScape password.</p>
+      <form id="login-form">
+        <label for="token">Your owner key or member token</label>
+        <div class="login-row"><input id="token" type="password" autocomplete="off" required minlength="64" maxlength="64" placeholder="Paste your private access token"><button type="submit">Open dashboard &rarr;</button></div>
+      </form>
+      <p class="fine">Group owner: type <strong>!verify</strong> in the bot channel to receive your private owner key by DM, then generate character-specific tokens in Manage group. Members: use the token your owner gives you here and in the RuneLite plugin's Member token setting; no Discord verification is needed. Never share the owner's key or enter a RuneScape password. Access is saved in this tab's session storage so refresh keeps you signed in. Lock clears it. Browser session restore or tab duplication may retain it.</p>
+      <button id="demo" class="quiet">Take a tour with fictional demo data &rarr;</button>
+    </section>
+    <p id="error" class="error" role="alert" hidden></p>
+    <div id="dashboard" hidden>
+      <div id="dashboard-view">
+      <section id="overview">
+        <div class="section-top"><div><div class="eyebrow">GROUP OVERVIEW</div><h1 data-brand="dashboardHeading">{{DASHBOARD_HEADING}}</h1><p class="subtitle" data-brand="dashboardSubtitle">{{DASHBOARD_SUBTITLE}}</p></div><div id="connection" class="pill" role="status">Connecting</div></div>
+        <div id="demo-banner" class="demo-banner" hidden>DEMO MODE &mdash; fictional players and activity. Nothing here is your group's real data.</div>
+        <div class="metrics">
+          <article><span>ACTIVE</span><strong id="metric-online">0 / 5</strong><small>Recently synced adventurers</small></article>
+          <article><span>COMBINED TOTAL</span><strong id="metric-levels">0</strong><small>Real skill levels, not boosted</small></article>
+          <article><span>BANKS SHARED</span><strong id="metric-banks">0</strong><small>Members with bank snapshots</small></article>
+          <article><span>DISCORD OUTBOX</span><strong id="metric-outbox">0</strong><small>Notifications waiting for delivery</small></article>
+        </div>
+        <div id="member-cards-heading" class="heading-row members-heading"><div><div class="eyebrow">THE PEOPLE BEHIND THE PROGRESS</div><h2>Your adventurers</h2></div><span class="muted">One group. Every gain.</span></div>
+        <p id="live-xp-status" class="live-xp-status" role="status">Connect to watch your group earn XP.</p>
+        <div id="members" class="member-grid"></div>
+      </section>
+      <section id="xp" class="card">
+        <div class="heading-row"><div><div class="eyebrow">FRIENDLY COMPETITION</div><h2>XP gained</h2></div><span class="tag">GROUP XP GAINS</span></div>
+        <div id="xp-ranges" class="xp-ranges" role="group" aria-label="XP graph time range">
+          <button type="button" data-range="1h" aria-pressed="false">Last hour</button>
+          <button type="button" data-range="24h" aria-pressed="true">24 hours</button>
+          <button type="button" data-range="7d" aria-pressed="false">7 days</button>
+          <button type="button" data-range="15d" aria-pressed="false">15 days</button>
+          <button type="button" data-range="30d" aria-pressed="false">30 days</button>
+          <button type="button" data-range="all" aria-pressed="false">All time</button>
+        </div>
+        <p id="xp-status" class="fine" role="status">Waiting for XP history.</p>
+        <div class="xp-chart-wrap"><svg id="xp-chart" viewBox="0 0 960 300" role="img" aria-labelledby="xp-title xp-description"><title id="xp-title">Group XP gained</title><desc id="xp-description">A separate line for each member. Ranked XP totals are listed below.</desc></svg></div>
+        <ol id="xp-legend" class="xp-legend" aria-label="Members ranked by XP gained"></ol>
+        <p class="fine">Total XP gained across all skills, since each member's first recorded baseline. Minute-resolution observations; all-time history older than 31 days is condensed to daily endpoints. Offline gains appear when the client next syncs, not when they were earned. No pre-tracker history.</p>
+      </section>
+      <section id="bank" class="card">
+        <div class="heading-row"><div><div class="eyebrow">SHARED STORAGE</div><h2 data-brand="bankHeading">{{BANK_HEADING}}</h2></div><span class="tag">BANKS + GROUP STORAGE</span></div>
+        <div class="filters"><label>Member<select id="bank-member"><option value="">All members</option></select></label><label class="search">Find an item<input id="bank-search" type="search" placeholder="Sharks, runes, logs..."></label></div>
+        <p id="bank-note" class="muted">Bank data is a saved snapshot, updated when a member opens or changes their bank.</p>
+        <div class="bank-values"><div><span>GE VALUE</span><strong id="bank-ge">Not synced</strong></div><div><span>HIGH ALCH VALUE</span><strong id="bank-alch">Not synced</strong></div></div>
+        <p id="bank-value-note" class="fine"></p>
+        <div id="bank-xp-heading" class="bank-xp-heading">ESTIMATED BANKED XP</div>
+        <div id="bank-xp" class="bank-xp"></div>
+        <p id="bank-xp-note" class="fine"></p>
+        <div class="bank-toolbar"><span>THE BANK</span><span id="bank-count"></span></div>
+        <div id="bank-rows" class="bank-vault" aria-label="Group bank items"></div>
+        <p id="bank-icons-status" class="fine" role="status"></p>
+        <p id="bank-empty" class="empty" hidden>No matching items. Try another member or search.</p>
+      </section>
+      <div class="bottom-grid">
+        <div id="map-home" hidden></div>
+        <section id="locations" class="card">
+          <div class="eyebrow">ADVENTURES IN PROGRESS</div><h2>Where's everyone?</h2>
+          <div class="geo-toolbar" aria-label="World map controls">
+            <button type="button" id="map-zoom-in" aria-label="Zoom in">+</button>
+            <button type="button" id="map-zoom-out" aria-label="Zoom out">&minus;</button>
+            <button type="button" id="map-fit">Fit group</button>
+            <a href="#map" id="map-open">Open full-page map</a>
+            <label>Floor<select id="map-plane"><option value="0">Ground</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></label>
+            <button type="button" id="map-retry" class="quiet" hidden>Reload map</button>
+          </div>
+          <div id="world-map" class="geographical-map" tabindex="0" role="region" aria-label="Geographical Gielinor map. Arrow keys pan; plus and minus zoom.">
+            <div id="map-tiles" class="geo-tiles" aria-hidden="true"></div>
+            <div id="map-markers" class="geo-markers"></div><span class="map-compass">N &uarr;</span>
+          </div>
+          <p class="map-attribution">Map: <a href="https://oldschool.runescape.wiki/" target="_blank" rel="noreferrer">OSRS Wiki</a> / Jagex.
+            <a href="https://weirdgloop.org/licensing/" target="_blank" rel="noreferrer">Map licensing</a>.</p>
+          <p id="map-status" class="fine" role="status"></p>
+          <p class="fine">Locations update with client syncs; markers expire after 30 seconds. Enable Share location in the plugin. Worlds are labelled separately; floors use separate map layers. Instances use template coordinates. Public map tiles load from the OSRS Wiki; names, access keys and group data are not sent there.</p>
+          <div id="location-list"></div>
+        </section>
+        <section id="activity" class="card">
+          <div class="heading-row"><div><div class="eyebrow">LATEST ACTIVITY</div><h2 data-brand="activityHeading">{{ACTIVITY_HEADING}}</h2></div><select id="activity-filter" aria-label="Activity type"><option value="">Everything</option><option value="boss">Boss kills</option><option value="loot">Drops</option><option value="quest">Quests</option><option value="chat">Group chat</option></select></div>
+          <div id="activity-list" class="feed"></div>
+        </section>
+      </div>
+      </div>
+      <section id="map-page" hidden aria-label="Full-page world map">
+        <div class="section-top"><div><div class="eyebrow">LIVE GROUP LOCATIONS</div><h1>World map</h1></div><a href="#locations">Back to dashboard</a></div>
+        <div id="map-page-content"></div>
+      </section>
+      <section id="manage-group" class="settings-page" hidden>
+        <div class="section-top"><div><div class="eyebrow">GROUP ADMINISTRATION</div><h1>Manage group</h1><p class="subtitle" id="group-management-role"></p></div></div>
+        <section class="card member-access" aria-labelledby="member-access-heading">
+          <div class="eyebrow">OWNER-CONTROLLED ACCESS</div>
+          <h2 id="member-access-heading">Members and access</h2>
+          <p class="fine">Generate a separate token for each character. Members upload only their assigned character; viewing permissions are controlled below. Managers can invite/kick regular members and edit their permissions, but cannot manage other managers, promote anyone, or change group settings. Only the owner can promote or demote managers. Tokens depend on the verified owner's continued Discord membership and Manage Server permission.</p>
+          <form id="member-token-form">
+            <label for="member-token-name">RuneScape character name</label>
+            <div class="member-token-create-row">
+              <input id="member-token-name" maxlength="12" required autocomplete="off" placeholder="Exact character name">
+              <button id="member-token-create" type="submit">Generate member token</button>
+            </div>
+          </form>
+          <p id="member-access-status" class="fine" role="status"></p>
+          <div id="member-token-result" hidden>
+            <label id="member-token-recipient" for="member-token-key"></label>
+            <textarea id="member-token-key" readonly rows="2" autocomplete="off" spellcheck="false" aria-describedby="member-token-warning"></textarea>
+            <p id="member-token-warning" class="fine">Shown only now. Send privately for the website and RuneLite. Anyone with this token can use its viewing and management permissions and upload as this character. Replacing or kicking invalidates their current token. Never share the owner key.</p>
+            <div class="member-token-actions"><button id="member-token-copy" type="button" class="quiet">Copy token</button><button id="member-token-dismiss" type="button" class="quiet">Hide token</button></div>
+          </div>
+          <div id="member-token-list"></div>
+          <p id="member-token-empty" class="fine" hidden>No member tokens yet. Generate one above.</p>
+        </section>
+      </section>
+      <section id="settings" class="settings-page" hidden>
+        <div class="section-top"><div><div class="eyebrow">GROUP OWNERS ONLY</div><h1>Settings</h1><p class="subtitle">Customise your group's name, logo, website and Discord messages. Changes apply instantly for everyone; no restart needed.</p></div><span class="tag">MANAGE SERVER</span></div>
+        <div class="card">
+        <form id="settings-form" novalidate>
+          <div id="settings-fields"></div>
+          <div class="settings-preview">
+            <div class="eyebrow">DISCORD PREVIEW</div>
+            <label>Example message<select id="preview-kind"></select></label>
+            <div class="discord-embed" id="embed-preview">
+              <div class="embed-author"><img id="embed-icon" alt=""><span id="embed-category"></span></div>
+              <div class="embed-title" id="embed-title"></div>
+              <div class="embed-body" id="embed-body"></div>
+              <div class="embed-footer"><img id="embed-footer-icon" alt=""><span id="embed-footer"></span></div>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button type="submit" id="settings-save">Save changes</button>
+            <button type="button" class="quiet" id="settings-discard">Discard changes</button>
+            <button type="button" class="quiet" id="settings-reset">Reset everything to defaults</button>
+            <span id="settings-status" role="status"></span>
+          </div>
+        </form>
+        </div>
+      </section>
+      <footer><span data-brand="footer">{{FOOTER}}</span> <span><span data-brand="clanName">{{CLAN_NAME}}</span> / PRIVATE TRACKER</span></footer>
+    </div>
+  </main>
+</body>
+</html>

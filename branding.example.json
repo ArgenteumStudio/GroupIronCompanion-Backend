@@ -1,0 +1,66 @@
+{
+  "clanName": "My Clan",
+  "logo": "branding/logo.png",
+  "discord": {
+    "footer": "{clan} Clan Tracker",
+    "useLogoIcon": true,
+    "colors": {
+      "loot": "#57A65B",
+      "valuable": "#3B82F6",
+      "rare": "#A855F7",
+      "legendary": "#F59E0B",
+      "boss": "#C0392B",
+      "milestone": "#F59E0B",
+      "quest": "#3B82F6",
+      "chat": "#1ABC9C",
+      "stats": "#C8AA6E",
+      "key": "#C8AA6E",
+      "success": "#57A65B",
+      "warning": "#F59E0B",
+      "error": "#C0392B"
+    },
+    "titles": {
+      "loot": "Loot Drop",
+      "valuable": "Valuable Drop",
+      "rare": "Rare Drop",
+      "legendary": "Legendary Drop",
+      "boss": "Boss Kill",
+      "milestone": "Kill Count Milestone",
+      "quest": "Quest Complete",
+      "chat": "Group Ironman Chat",
+      "stats": "Player Stats",
+      "key": "Access Key",
+      "verification": "Verification"
+    },
+    "lootTiers": {
+      "valuable": 1000000,
+      "rare": 10000000,
+      "legendary": 100000000
+    },
+    "milestones": {
+      "every": 50,
+      "largeFrom": 1000,
+      "largeEvery": 250
+    }
+  },
+  "website": {
+    "title": "Group Tracker",
+    "tagline": "GROUP TRACKER",
+    "heading": "Our group.\nOur progress.",
+    "intro": "Your group's banks, stats and adventures, all in one private place.",
+    "dashboardHeading": "Group progress",
+    "dashboardSubtitle": "Everyone's stats, banks and adventures in one place.",
+    "bankHeading": "Group banks",
+    "activityHeading": "Recent activity",
+    "footer": "Made for the group.",
+    "colors": {
+      "background": "#141b1a",
+      "panel": "#1b2421",
+      "border": "#344039",
+      "text": "#f3ebd2",
+      "muted": "#a1afa3",
+      "accent": "#bdd988",
+      "highlight": "#e7bb72"
+    }
+  }
+}

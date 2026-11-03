@@ -1,0 +1,20 @@
+.geo-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.geo-toolbar button{padding:7px 12px}
+.geo-toolbar label{display:flex;gap:8px;align-items:center;font-size:12px}
+.geo-toolbar select{padding:7px}
+.geographical-map{height:360px;position:relative;overflow:hidden;border:1px solid var(--border);border-radius:9px;background:#111b20;cursor:grab;touch-action:none;isolation:isolate}
+.geographical-map:active{cursor:grabbing}
+.geographical-map:focus-visible{outline:2px solid var(--green);outline-offset:3px}
+.geo-tiles,.geo-markers{position:absolute;inset:0;pointer-events:none}
+.geo-tiles img{position:absolute;width:256px;height:256px;max-width:none;user-select:none}
+.geo-pin{position:absolute;transform:translate(-50%,calc(-100% - 6px));pointer-events:auto;border:2px solid var(--green);background:#17251a;color:#fff;padding:4px 8px;border-radius:6px;font-size:11px;white-space:nowrap;box-shadow:0 2px 6px #000b}
+.geo-pin::after{content:"";position:absolute;left:calc(50% - 5px);bottom:-7px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--green)}
+.geo-pin:focus-visible{z-index:2;outline:2px solid white}
+.geographical-map .map-compass{z-index:3;background:#152019d9;padding:5px;border-radius:5px;pointer-events:none}
+.map-attribution{font-size:10px;text-align:right;margin:5px 0}
+.location-row button{padding:5px 8px;font-size:11px}
+.location-row small{display:block;color:var(--muted)}
+#map-page .geographical-map{height:calc(100dvh - 270px);min-height:400px}
+#map-page .card{width:100%}
+.geo-toolbar a{font-size:12px}
+@media(max-width:600px){.geographical-map{height:310px}}

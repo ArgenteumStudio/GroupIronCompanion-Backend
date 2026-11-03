@@ -1,0 +1,13 @@
+node_modules/
+data/
+.env
+.env.*
+!.env.example
+members.json
+members.json.*
+skill-emojis.json
+skill-emojis.json.*
+branding.json
+branding.json.*
+branding/
+*.log
