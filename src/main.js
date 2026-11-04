@@ -1,8 +1,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
-import { BRAND, Store, allCharacters, createBridge, deliverPending, statsReply, alertChannelIds, validateSkillEmojis } from './bridge.js';
-import { DiscordAccess, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from './access.js';
+import { BRAND, Store, normalize, allCharacters, memberCharacters, createBridge, deliverPending, statsReply, kcReply, alertChannelIds, validateSkillEmojis } from './bridge.js';
+import { DiscordAccess, clearCommand, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from './access.js';
 import { withStatsCard } from './statsCard.js';
+import { bossIconLoader, withKcCards } from './kcCard.js';
+import { hiscoreLoader } from './hiscores.js';
 import { createWorldMap } from './worldMap.js';
 import { alertMessage, spriteLoader } from './alertEmbed.js';
 import { dirname, resolve } from 'node:path';
@@ -16,11 +18,14 @@ validateDiscordMembers(members);
 const alertChannels = alertChannelIds(process.env);
 const statsChannelId = process.env.DISCORD_STATS_CHANNEL_ID?.trim() || process.env.DISCORD_CHANNEL_ID;
 if (!/^\d{17,20}$/.test(statsChannelId)) throw new Error('DISCORD_STATS_CHANNEL_ID must be a Discord channel ID or blank');
+const clearChannels = new Set([process.env.DISCORD_CHANNEL_ID, statsChannelId, ...Object.values(alertChannels)]);
 const skillEmojiFile = process.env.SKILL_EMOJIS_FILE ?? 'skill-emojis.json';
 const skillEmojis = existsSync(skillEmojiFile)
   ? validateSkillEmojis(JSON.parse(readFileSync(skillEmojiFile, 'utf8'))) : {};
 const store = new Store(process.env.DATA_FILE ?? 'data/state.json');
 const sprite = spriteLoader(resolve(dirname(store.file), 'icons'));
+const bossIcon = bossIconLoader(resolve(dirname(store.file), 'boss-icons'));
+const hiscoreKc = hiscoreLoader();
 const discord = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
@@ -49,10 +54,27 @@ discord.on(Events.MessageCreate, async message => {
   if (message.author.bot || message.guildId !== process.env.DISCORD_GUILD_ID) return;
   try {
     if (message.channelId === process.env.DISCORD_CHANNEL_ID && await verifyCommand(message, access)) return;
+    if (await clearCommand(message, access, { channelIds: clearChannels, botId: discord.user?.id })) return;
     if ([process.env.DISCORD_CHANNEL_ID, statsChannelId].includes(message.channelId) &&
         await linksCommand(message, access)) return;
     if (message.channelId !== statsChannelId) return;
-    if (!members.some(member => member.discordId === message.author.id)) return;
+    const author = members.find(member => member.discordId === message.author.id);
+    if (!author) return;
+    const characters = allCharacters(store, members);
+    let state = store.state;
+    if (/^!kc\b/i.test(message.content)) {
+      const content = message.content.toLowerCase();
+      const wanted = characters.filter(name => content.includes(name.toLowerCase()));
+      const names = wanted.length ? wanted : memberCharacters(store, author);
+      const hiscores = Object.fromEntries(await Promise.all(names.map(async name =>
+        [normalize(name), await hiscoreKc(name)])));
+      state = { ...store.state, hiscores };
+    }
+    const kc = kcReply(message.content, state, characters, memberCharacters(store, author));
+    if (kc !== null) {
+      await message.reply({ ...await withKcCards(kc, bossIcon), allowedMentions: { parse: [], repliedUser: false } });
+      return;
+    }
     const reply = statsReply(message.content, store.state, allCharacters(store, members), skillEmojis);
     if (reply === null) return;
     await message.reply({ ...await withStatsCard(reply), allowedMentions: { parse: [], repliedUser: false } });

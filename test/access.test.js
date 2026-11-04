@@ -1,10 +1,10 @@
-import { test } from 'node:test';
+﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, createBridge } from '../src/bridge.js';
-import { DiscordAccess, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from '../src/access.js';
+import { DiscordAccess, clearCommand, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from '../src/access.js';
 
 const id = '123456789012345678';
 const members = [{ name: 'Test Player', discordId: id }];
@@ -318,4 +318,45 @@ test('characters auto-link on first sync, alts are capped, and names cannot be t
   await command('!unlink Owned Name', otherId);
   assert.match(replies.at(-1).title, /Set by the owner/);
   assert.equal((await post('Alt Five')).status, 200);
+});
+test('!clear deletes only the bot messages in allowed channels for admins', async t => {
+  const BOT = '999999999999999999';
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = 100 * DAY;
+  const make = (n, author, age) => ({ id: String(1000 - n), author: { id: author }, createdTimestamp: now - age,
+    deleted: false, async delete() { this.deleted = true; } });
+  const history = [make(1, BOT, DAY), make(2, id, DAY), make(3, BOT, DAY), make(4, BOT, 30 * DAY), make(5, BOT, DAY)];
+  const bulk = [];
+  const sent = [];
+  const channel = {
+    messages: { async fetch({ before }) {
+      const page = history.filter(value => Number(value.id) < Number(before));
+      const map = new Map(page.map(value => [value.id, value]));
+      map.last = () => page.at(-1);
+      return map;
+    } },
+    async bulkDelete(ids) { bulk.push(...ids); for (const value of history) if (ids.includes(value.id)) value.deleted = true; return { size: ids.length }; },
+    async send(reply) { sent.push(reply); return { delete: async () => {} }; },
+  };
+  const replies = [];
+  const command = (content, isAdmin = true, channelId = 'alerts') => clearCommand({
+    content, channelId, channel, author: { id }, id: '1000',
+    delete: async () => {}, reply: async value => { replies.push(value); },
+  }, { members, isAdmin: async () => isAdmin }, { channelIds: new Set(['alerts']), botId: BOT, now: () => now, confirmMillis: 0, logger: { log() {}, error: (...args) => assert.fail(args.join(' ')) } });
+
+  assert.equal(await command('!clearall'), false);
+  assert.equal(await command('!clear', true, 'general'), false);
+  assert.equal(await command('!clear', false), true);
+  assert.match(replies[0].embeds[0].data?.title ?? JSON.stringify(replies[0]), /Not allowed/);
+  assert.equal(history.some(value => value.deleted), false);
+
+  assert.equal(await command('!clear 2'), true);
+  assert.deepEqual(bulk, ['999', '997']);
+  assert.equal(history[1].deleted, false);
+  assert.equal(history[3].deleted, false);
+
+  assert.equal(await command('!clear all'), true);
+  assert.equal(history.filter(value => value.author.id === BOT).every(value => value.deleted), true);
+  assert.equal(history[1].deleted, false);
+  assert.match(JSON.stringify(sent.at(-1)), /Removed \*\*/);
 });

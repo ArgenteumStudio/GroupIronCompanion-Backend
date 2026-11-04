@@ -8,6 +8,7 @@ import { LiveXp, validXpBatch } from './liveXp.js';
 import { SKILLS } from '../public/skills.js';
 import { recordXp, xpSeries, XP_RANGES } from '../public/xp.js';
 import { permissionsFor } from './permissions.js';
+import { bossName, isHiscoreBoss } from './bosses.js';
 
 import { BRAND, branding, editableBranding, embedColor, embedTitle, renderSiteHtml, saveBranding, themeCss } from './branding.js';
 export { BRAND };
@@ -23,7 +24,8 @@ const itemsValid = (items, max = 2000) => Array.isArray(items) && items.length <
   items.every(item => item && integer(item.id, 1000000) && item.id > 0 &&
     integer(item.qty, 2147483647) && item.qty > 0 && text(item.name) &&
     (item.price == null || integer(item.price)) &&
-    (item.highAlch == null || integer(item.highAlch, 2147483647)));
+    (item.highAlch == null || integer(item.highAlch, 2147483647)) &&
+    (item.tab == null || integer(item.tab, 9)));
 const skills = new Set([
   'ATTACK', 'DEFENCE', 'STRENGTH', 'HITPOINTS', 'RANGED', 'PRAYER', 'MAGIC',
   'COOKING', 'WOODCUTTING', 'FLETCHING', 'FISHING', 'FIREMAKING', 'CRAFTING',
@@ -45,6 +47,12 @@ export function validIcons(icons) {
   });
 }
 
+function validKillCounts(value) {
+  if (typeof value !== 'object' || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 500 && entries.every(([boss, kc]) => text(boss, 80) && integer(kc, 2147483647));
+}
+
 export function validSnapshot(body) {
   if (!body || !validName(body.username) || !body.stats ||
       typeof body.stats !== 'object' || Array.isArray(body.stats)) return false;
@@ -59,6 +67,7 @@ export function validSnapshot(body) {
       Date.now() - body.observedAt > 300000) return false;
   if (typeof body.bankShared !== 'boolean') return false;
   if (body.questPoints != null && !integer(body.questPoints, 1000)) return false;
+  if (body.killCounts != null && !validKillCounts(body.killCounts)) return false;
   if (body.groupStorage != null && (!itemsValid(body.groupStorage) ||
       !integer(body.groupStorageUpdatedAt) || body.groupStorageUpdatedAt > body.observedAt)) return false;
   return body.bank === null || (itemsValid(body.bank) && integer(body.bankUpdatedAt) &&
@@ -73,8 +82,18 @@ export function validEvent(event) {
     case 'loot': return text(event.source) && itemsValid(event.items, 500) &&
       event.items.length > 0 && (event.kc == null || integer(event.kc, 2147483647));
     case 'quest': return text(event.quest);
+    case 'diary': return text(event.diary);
     default: return false;
   }
+}
+
+function recordKc(kc, event) {
+  const boss = event.type === 'boss' ? event.boss : event.type === 'loot' ? event.source : null;
+  if (!boss || !Number.isInteger(event.kc) || event.kc < 1) return;
+  const user = normalize(event.username);
+  const counts = kc[user] ??= {};
+  const key = normalize(boss);
+  if (!counts[key] || event.kc >= counts[key].kc) counts[key] = { boss, kc: event.kc };
 }
 
 export class Store {
@@ -86,6 +105,10 @@ export class Store {
     this.state.activity ??= [];
     this.state.xpHistory ??= {};
     this.state.links ??= {};
+    if (!this.state.kc) {
+      this.state.kc = {};
+      for (const event of this.state.activity) recordKc(this.state.kc, event);
+    }
     if (this.state.version !== 1 || !this.state.members || !this.state.seen ||
         !Array.isArray(this.state.outbox)) throw new Error('Unsupported or invalid state file');
   }
@@ -150,6 +173,7 @@ export class Store {
     this.state.members[key] = {
       username: body.username, stats: body.stats, position: body.position, updatedAt: body.observedAt,
       questPoints: body.questPoints ?? previous?.questPoints ?? null,
+      killCounts: body.killCounts ?? previous?.killCounts ?? null,
       bank: !body.bankShared ? null : (body.bank ?? previous?.bank ?? null),
       bankUpdatedAt: !body.bankShared ? null : (body.bank === null ? previous?.bankUpdatedAt ?? null : body.bankUpdatedAt),
       groupStorage: !body.bankShared ? null :
@@ -179,6 +203,10 @@ export class Store {
     const previousActivity = this.state.activity;
     this.state.activity = [...previousActivity, { ...event, receivedAt: now }].slice(-300);
     this.state.seen[key] = now;
+    const user = normalize(event.username);
+    const previousKc = this.state.kc[user];
+    this.state.kc[user] = { ...previousKc };
+    recordKc(this.state.kc, event);
     for (const [id, time] of Object.entries(this.state.seen)) {
       if (now - time > 7 * 86400000) delete this.state.seen[id];
     }
@@ -188,6 +216,8 @@ export class Store {
       this.state.outbox.pop();
       this.state.activity = previousActivity;
       delete this.state.seen[key];
+      if (previousKc === undefined) delete this.state.kc[user];
+      else this.state.kc[user] = previousKc;
       throw error;
     }
     return true;
@@ -543,6 +573,7 @@ export function formatEvent(event) {
     case 'chat': return `[GIM] **${name}:** ${escapeDiscord(event.message)}`;
     case 'boss': return `**${name}** defeated **${escapeDiscord(event.boss)}** - KC **${event.kc.toLocaleString('en-US')}**`;
     case 'quest': return `**${name}** completed **${escapeDiscord(event.quest)}**!`;
+    case 'diary': return `**${name}** completed the **${escapeDiscord(event.diary)}** Achievement Diary!`;
     case 'loot': {
       const drops = event.items.map(item => `${item.qty.toLocaleString('en-US')} x ${escapeDiscord(item.name)}`).join(', ');
       return `**${name}** received ${drops} from **${escapeDiscord(event.source)}**${event.kc == null ? '' : ` (KC ${event.kc})`}`;
@@ -630,10 +661,98 @@ export function statsReply(content, state, memberNames, emojis = {}) {
   };
 }
 
+// Saved RuneLite kill counts merged with kills the plugin has observed, keyed by hiscore boss name.
+export function killCountsFor(state, name) {
+  const key = normalize(name);
+  const counts = new Map();
+  const add = (raw, kc) => {
+    const boss = bossName(raw);
+    const previous = counts.get(normalize(boss));
+    if (!previous || kc > previous.kc) counts.set(normalize(boss), { boss, kc });
+  };
+  for (const [boss, kc] of Object.entries(state.members?.[key]?.killCounts ?? {})) {
+    if (isHiscoreBoss(boss)) add(boss, kc);
+  }
+  for (const [boss, kc] of Object.entries(state.hiscores?.[key] ?? {})) add(boss, kc);
+  for (const value of Object.values(state.kc?.[key] ?? {})) add(value.boss, value.kc);
+  return [...counts.values()].sort((a, b) => b.kc - a.kc || a.boss.localeCompare(b.boss));
+}
+
+const KC_USAGE = 'Usage: `!kc`, `!kc player`, `!kc boss` or `!kc player boss`';
+
+export function kcReply(content, state, memberNames, authorNames = []) {
+  const match = /^!kc(?:\s+(.+?))?\s*$/i.exec(content);
+  if (!match) return null;
+  const words = (match[1] ?? '').split(/\s+/).filter(Boolean);
+  // The longest leading run of words that names a group character selects the player.
+  let player = null;
+  let rest = words;
+  for (let size = words.length; size > 0 && !player; size--) {
+    const candidate = normalize(words.slice(0, size).join(' '));
+    player = memberNames.find(name => normalize(name) === candidate) ?? null;
+    if (player) rest = words.slice(size);
+  }
+  const boss = rest.join(' ');
+  const players = player ? [player] : authorNames;
+  if (players.length === 0) {
+    return { content: words.length ? `That player is not in this private group. ${KC_USAGE}`
+      : `No linked character found. ${KC_USAGE}` };
+  }
+  const embeds = [], cards = [];
+  for (const name of players.slice(0, 5)) {
+    const member = state.members?.[normalize(name)];
+    const username = member?.username ?? name;
+    const all = killCountsFor(state, name);
+    let counts = all;
+    if (boss) {
+      const wanted = normalize(bossName(boss));
+      const exact = all.filter(value => normalize(value.boss) === wanted);
+      counts = exact.length ? exact : all.filter(value => normalize(value.boss).includes(normalize(boss)));
+    }
+    const total = counts.reduce((sum, value) => sum + value.kc, 0);
+    const lines = counts.map(value => `**${escapeDiscord(value.boss)}** — ${value.kc.toLocaleString('en-US')}`);
+    let description = '';
+    let shown = 0;
+    for (const line of lines) {
+      if (description.length + line.length + 40 > 4000) break;
+      description += `${line}\n`;
+      shown++;
+    }
+    if (shown < lines.length) description += `…and ${lines.length - shown} more`;
+    const pill = value => `\`\u2002${value}\u2002\``;
+    let fields = [];
+    if (counts.length === 0) {
+      description = boss ? `No kill count found for **${escapeDiscord(boss)}**.`
+        : 'No kill counts synced yet. Log in with the plugin connected and **Boss KC alerts** enabled.';
+    } else if (boss && counts.length === 1) {
+      fields = [{ name: counts[0].boss, value: pill(counts[0].kc.toLocaleString('en-US')), inline: true }];
+    } else {
+      fields = [
+        { name: boss ? 'Matching KC' : 'Total KC', value: pill(total.toLocaleString('en-US')), inline: true },
+        { name: 'Top Boss', value: pill(`${counts[0].boss} · ${counts[0].kc.toLocaleString('en-US')}`), inline: true },
+      ];
+    }
+    if (member?.updatedAt) fields.push({ name: 'Last Synced', value: `<t:${Math.floor(member.updatedAt / 1000)}:R>`, inline: true });
+    embeds.push({
+      author: { name: 'Kill Counts' },
+      title: username,
+      description,
+      fields,
+      color: embedColor('boss'),
+      footer: { text: BRAND },
+      ...(member?.updatedAt ? { timestamp: new Date(member.updatedAt).toISOString() } : {}),
+    });
+    cards.push(counts.length ? { username, counts, total, filtered: Boolean(boss) } : null);
+  }
+  return { embeds, cards };
+}
+
 export const ALERT_CHANNEL_SETTINGS = Object.freeze({
   loot: 'DISCORD_DROPS_CHANNEL_ID',
   boss: 'DISCORD_KILLS_CHANNEL_ID',
   quest: 'DISCORD_QUESTS_CHANNEL_ID',
+  // Achievement diaries share the quest channel until they get their own.
+  diary: 'DISCORD_QUESTS_CHANNEL_ID',
   chat: 'DISCORD_CHAT_CHANNEL_ID',
 });
 

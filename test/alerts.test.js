@@ -4,7 +4,7 @@ import { readFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BRAND, alertMessage, spriteLoader, shortGp, lootColor, wikiUrl, isMilestone } from '../src/alertEmbed.js';
-import { validEvent } from '../src/bridge.js';
+import { validEvent, formatEvent, ALERT_CHANNEL_SETTINGS } from '../src/bridge.js';
 
 const shark = readFileSync(new URL('../public/demo-icons/385.png', import.meta.url));
 const sprite = async () => shark;
@@ -56,6 +56,15 @@ test('boss, quest and chat alerts are embeds without mentions', async () => {
   assert.equal(quest.embeds[0].title, 'Dragon Slayer II');
   assert.match(quest.embeds[0].description, /has completed \*\*Dragon Slayer II\*\*/);
   assert.equal(quest.files[1].name, 'quest.png');
+  const diaryEvent = { ...base, type: 'diary', diary: 'Varrock Hard' };
+  assert.equal(validEvent(diaryEvent), true);
+  assert.equal(validEvent({ ...diaryEvent, diary: '' }), false);
+  const diary = await alertMessage(diaryEvent);
+  assert.equal(diary.embeds[0].title, 'Varrock Hard Diary');
+  assert.equal(diary.embeds[0].author.name, 'Achievement Diary');
+  assert.match(diary.embeds[0].url, /search=Varrock%20Diary&/);
+  assert.equal(ALERT_CHANNEL_SETTINGS.diary, ALERT_CHANNEL_SETTINGS.quest);
+  assert.match(formatEvent(diaryEvent), /completed the \*\*Varrock Hard\*\* Achievement Diary/);
   assert.match(wikiUrl('Prayer potion(4)'), /%284%29/);
   const chat = await alertMessage({ ...base, type: 'chat', message: 'hi @everyone' });
   assert.equal(chat.embeds[0].description.includes('@everyone'), false);

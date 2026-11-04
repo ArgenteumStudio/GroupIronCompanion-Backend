@@ -202,6 +202,16 @@ export async function alertMessage(event, { sprite = spriteLoader(null), now = D
       }],
       files: [...brandFiles(), iconFile('quest')],
     };
+    case 'diary': return {
+      embeds: [{
+        ...brandedEmbed({ category: embedTitle('diary'), color: embedColor('diary'), timestamp: time }),
+        title: plain(`${event.diary} Diary`),
+        url: wikiUrl(`${event.diary.replace(/ (Easy|Medium|Hard|Elite)$/i, '')} Diary`),
+        description: `**${escapeDiscord(event.username)}** has completed the **${escapeDiscord(event.diary)}** Achievement Diary.`,
+        thumbnail: { url: 'attachment://quest.png' },
+      }],
+      files: [...brandFiles(), iconFile('quest')],
+    };
     case 'chat': return {
       embeds: [{
         ...brandedEmbed({ category: embedTitle('chat'), color: embedColor('chat'), timestamp: time }),

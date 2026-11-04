@@ -377,6 +377,66 @@ export async function verifyCommand(message, access, logger = console) {
   return true;
 }
 
+const CLEAR_DEFAULT = 100;
+const CLEAR_MAX = 1000;
+const CLEAR_SCAN_MAX = 5000;
+const BULK_DELETE_AGE = 14 * 24 * 60 * 60 * 1000 - 60_000;
+
+// !clear [count|all] deletes the bot's own recent messages in this channel (admins only).
+export async function clearCommand(message, access, { channelIds, botId, logger = console, now = Date.now, confirmMillis = 5000 } = {}) {
+  const match = /^!clear(?:\s+(\d+|all))?\s*$/i.exec(message.content);
+  if (!match || !channelIds?.has(message.channelId)) return false;
+  const self = access.members.find(value => value.discordId === message.author.id);
+  const respond = async reply => {
+    const sent = await message.channel.send({ ...reply, allowedMentions: { parse: [] } }).catch(() => null);
+    if (sent && confirmMillis > 0) setTimeout(() => sent.delete().catch(() => {}), confirmMillis).unref?.();
+  };
+  if (!await access.isAdmin(self)) {
+    await message.reply({ ...statusMessage('Not allowed', 'Only group admins (Manage Server) can clear notifications.', VERIFY_COLORS.error),
+      allowedMentions: { parse: [], repliedUser: false } });
+    return true;
+  }
+  const wanted = match[1]?.toLowerCase() === 'all' ? CLEAR_MAX
+    : Math.min(CLEAR_MAX, Math.max(1, Number(match[1] ?? CLEAR_DEFAULT)));
+  try {
+    await message.delete().catch(() => {});
+    const targets = [];
+    let before = message.id;
+    for (let scanned = 0; targets.length < wanted && scanned < CLEAR_SCAN_MAX;) {
+      const page = await message.channel.messages.fetch({ limit: 100, before });
+      if (!page.size) break;
+      for (const value of page.values()) {
+        if (value.author?.id === botId && targets.length < wanted) targets.push(value);
+      }
+      scanned += page.size;
+      before = page.last().id;
+    }
+    const recent = targets.filter(value => now() - value.createdTimestamp < BULK_DELETE_AGE);
+    const old = targets.filter(value => !recent.includes(value));
+    let deleted = 0;
+    for (let i = 0; i < recent.length; i += 100) {
+      const chunk = recent.slice(i, i + 100);
+      try {
+        if (chunk.length === 1) throw new Error('single');
+        deleted += (await message.channel.bulkDelete(chunk.map(value => value.id), true)).size;
+      } catch {
+        old.push(...chunk);
+      }
+    }
+    for (const value of old) {
+      if (await value.delete().then(() => true, () => false)) deleted += 1;
+    }
+    logger.log?.(`Cleared ${deleted} bot message(s) in channel ${message.channelId}`);
+    await respond(statusMessage('Notifications cleared',
+      deleted ? `Removed **${deleted}** bot message${deleted === 1 ? '' : 's'} from this channel.` : 'No bot messages to remove here.',
+      VERIFY_COLORS.ok));
+  } catch (error) {
+    logger.error('Clear command failed:', error.message);
+    await respond(statusMessage('Something went wrong', 'Make sure the bot can read message history here, then try again.', VERIFY_COLORS.error));
+  }
+  return true;
+}
+
 // !characters lists your linked characters; !unlink <name> frees one (admins can unlink anyone's).
 export async function linksCommand(message, access, logger = console) {
   const list = /^!characters\s*$/i.test(message.content);

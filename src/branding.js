@@ -14,12 +14,12 @@ export const DEFAULTS = Object.freeze({
     useLogoIcon: true,
     colors: {
       loot: '#57A65B', valuable: '#3B82F6', rare: '#A855F7', legendary: '#F59E0B',
-      boss: '#C0392B', milestone: '#F59E0B', quest: '#3B82F6', chat: '#1ABC9C',
+      boss: '#C0392B', milestone: '#F59E0B', quest: '#3B82F6', diary: '#3B82F6', chat: '#1ABC9C',
       stats: '#C8AA6E', key: '#C8AA6E', success: '#57A65B', warning: '#F59E0B', error: '#C0392B',
     },
     titles: {
       loot: 'Loot Drop', valuable: 'Valuable Drop', rare: 'Rare Drop', legendary: 'Legendary Drop',
-      boss: 'Boss Kill', milestone: 'Kill Count Milestone', quest: 'Quest Complete',
+      boss: 'Boss Kill', milestone: 'Kill Count Milestone', quest: 'Quest Complete', diary: 'Achievement Diary',
       chat: 'Group Ironman Chat', stats: 'Player Stats', key: 'Access Key', verification: 'Verification',
     },
     lootTiers: { valuable: 1_000_000, rare: 10_000_000, legendary: 100_000_000 },

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { bankSummary, itemBankInfo } from '../public/bank-info.js';
 import { tabSession } from '../public/tab-session.js';
 const item = (name, qty = 1, extra = {}) => ({ id: 1, name, qty, ...extra });
-const xp = items => Object.fromEntries(bankSummary(items).skills.map(entry => [entry.skill, entry.xp]));
+const xp = items => Object.fromEntries(bankSummary(items).skills.filter(entry => entry.xp).map(entry => [entry.skill, entry.xp]));
 
 test('bank values use stack quantities, preserve exact large GP totals and label missing prices', () => {
   const values = bankSummary([item('Coins', 25, { price: 1, highAlch: 0 }), item('Unknown')]);
@@ -35,8 +35,20 @@ test('recipe XP is bounded by secondaries, allocated once, and never borrowed ac
   assert.deepEqual(xp([item('Mithril ore', 10), item('Runite ore', 10), item('Coal', 45)]), { SMITHING: 300 });
   assert.deepEqual(xp([item('Ranarr potion (unf)', 10)]), {});
   const separate = [[item('Ranarr potion (unf)', 10)], [item('Snape grass', 10)]];
-  assert.deepEqual(bankSummary(separate.flat(), separate).skills, []);
+  assert.deepEqual(bankSummary(separate.flat(), separate).skills.filter(entry => entry.xp), []);
   assert.match(bankSummary(items).xpNote, /unsupported items are excluded/);
+});
+
+test('banked XP lists every skill, nonzero first, and covers farming, runecraft and magic supplies', () => {
+  const skills = bankSummary([item('Magic sapling', 2), item('Pure essence', 100), item('Nature rune', 10), item('Logs', 1)]).skills;
+  assert.equal(skills.length, 24);
+  assert.equal(new Set(skills.map(entry => entry.skill)).size, 24);
+  assert.deepEqual(skills.slice(0, 4), [
+    { skill: 'FARMING', xp: 27827.6 }, { skill: 'MAGIC', xp: 650 },
+    { skill: 'RUNECRAFT', xp: 500 }, { skill: 'FIREMAKING', xp: 40 },
+  ]);
+  assert.ok(skills.slice(4).every(entry => entry.xp === 0));
+  assert.equal(xp([item('Acorn', 1)]).FARMING, 481.3);
 });
 
 test('tab access survives reload in session storage, clears on Lock, rejects invalid values and surfaces storage errors', () => {

@@ -2,7 +2,7 @@ import { xpSeries, smoothXpPath } from './xp.js';
 import { initSettings } from './settings.js';
 import { initWorldMap } from './world-map.js';
 import { initMembers } from './members.js';
-import { SKILLS, xpAtLevel } from './skills.js';
+import { SKILLS, skillName, xpAtLevel } from './skills.js';
 import { initBankTooltips } from './bank-tooltips.js';
 import { tabSession } from './tab-session.js';
 import { bankSummary, itemBankInfo } from './bank-info.js';
@@ -320,6 +320,46 @@ $('xp-ranges').addEventListener('click', event => {
   for (const choice of $('xp-ranges').querySelectorAll('button')) choice.setAttribute('aria-pressed', String(choice === button));
   void loadXp();
 });
+const bankTabs = new Map();
+// Mirrors the in-game tab bar: an "all items" tab, then each numbered tab drawn with its first item.
+function bankTabStrip(member) {
+  const firsts = new Map();
+  for (const item of member.bank ?? []) {
+    if (item.tab > 0 && !firsts.has(item.tab)) firsts.set(item.tab, item);
+  }
+  if (!firsts.size) return null;
+  if (!firsts.has(bankTabs.get(member.username))) bankTabs.delete(member.username);
+  const selected = bankTabs.get(member.username);
+  const strip = element('div', 'bank-tabs');
+  strip.setAttribute('role', 'tablist');
+  strip.setAttribute('aria-label', `${member.username} bank tabs`);
+  const tab = (value, label, item) => {
+    const button = element('button', 'bank-tab');
+    button.type = 'button';
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(value === selected));
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    const encoded = item && (data.icons?.[item.id] ? `data:image/png;base64,${data.icons[item.id]}`
+      : mode === 'demo' ? `/demo-icons/${item.id}.png` : null);
+    if (encoded) {
+      const image = element('img', 'item-sprite');
+      image.src = encoded; image.alt = ''; image.width = 36; image.height = 32;
+      button.append(image);
+    } else {
+      button.append(element('span', 'bank-tab-label', item ? String(value) : '\u221e'));
+    }
+    button.addEventListener('click', () => {
+      if (value == null) bankTabs.delete(member.username);
+      else bankTabs.set(member.username, value);
+      renderBank();
+    });
+    return button;
+  };
+  strip.append(tab(undefined, 'All items'));
+  for (const [index, item] of [...firsts].sort((a, b) => a[0] - b[0])) strip.append(tab(index, `Tab ${index} (${item.name})`, item));
+  return strip;
+}
 function renderBank() {
   bankTooltips.hide();
   const query = $('bank-search').value.trim().toLowerCase();
@@ -342,8 +382,16 @@ function renderBank() {
       `Last seen ${age(member.bankUpdatedAt)}${member.syncedBy ? ` / Synced by ${member.syncedBy}` : ''}`));
     const grid = element('div', 'bank-grid');
     const bankItems = [];
+    const tabStrip = bankTabStrip(member);
+    const selectedTab = tabStrip ? bankTabs.get(member.username) : undefined;
+    let currentTab;
     for (const item of member.bank ?? []) {
       if (!item.name.toLowerCase().includes(query)) continue;
+      if (selectedTab != null && item.tab !== selectedTab) continue;
+      if (selectedTab == null && item.tab != null && item.tab !== currentTab) {
+        currentTab = item.tab;
+        grid.append(element('div', 'bank-tab-heading', item.tab === 0 ? 'Untabbed' : `Tab ${item.tab}`));
+      }
       count++;
       visibleItems.push(item);
       bankItems.push(item);
@@ -380,9 +428,12 @@ function renderBank() {
       tile.dataset.tooltip = `${item.name}\n${number(item.qty)} in ${member.username}'s bank\n${itemBankInfo(item, allowed('stats'))}`;
       grid.append(tile);
     }
-    if (grid.childElementCount || (!query && member.bank?.length === 0)) {
-      section.append(heading, grid);
-      if (!grid.childElementCount) grid.append(element('p', 'muted', 'This saved storage is empty.'));
+    if (grid.childElementCount || (tabStrip && (selectedTab != null || !query)) || (!query && member.bank?.length === 0)) {
+      section.append(heading);
+      if (tabStrip) section.append(tabStrip);
+      section.append(grid);
+      if (!grid.childElementCount) grid.append(element('p', 'muted', tabStrip && (query || selectedTab != null)
+        ? 'No matching items in this tab.' : 'This saved storage is empty.'));
       const values = bankSummary(bankItems);
       section.insertBefore(element('p', 'bank-owner-values', `GE ${values.ge} / High alch ${values.alch}`), grid);
       rows.push(section);
@@ -396,12 +447,12 @@ function renderBank() {
   $('bank-alch').textContent = summary.alch;
   $('bank-value-note').textContent = summary.coverage;
   $('bank-xp').replaceChildren(...summary.skills.map(({ skill, xp }) => {
-    const chip = element('span', 'bank-xp-chip');
+    const chip = element('span', xp ? 'bank-xp-chip' : 'bank-xp-chip none');
     const image = element('img', 'skill-icon');
     image.src = `/skill-icons/${skill.toLowerCase()}.png`;
     image.alt = skill;
     image.width = 18; image.height = 18;
-    chip.append(image, element('span', '', `${skill.charAt(0) + skill.slice(1).toLowerCase()}: ${xp.toLocaleString('en-US', { maximumFractionDigits: 1 })} XP`));
+    chip.append(image, element('span', '', `${skillName(skill)}: ${xp.toLocaleString('en-US', { maximumFractionDigits: 1 })} XP`));
     return chip;
   }));
   $('bank-xp-note').textContent = summary.xpNote;
@@ -453,12 +504,13 @@ function renderActivity() {
     switch (event.type) {
       case 'boss': description = `defeated ${event.boss} - KC ${number(event.kc)}`; break;
       case 'quest': description = `completed ${event.quest}!`; break;
+      case 'diary': description = `completed the ${event.diary} Achievement Diary!`; break;
       case 'chat': description = `in group chat: ${event.message}`; break;
       case 'loot': description = `received ${event.items.map(item => `${number(item.qty)} x ${item.name}`).join(', ')} from ${event.source}${event.kc == null ? '' : ` (KC ${event.kc})`}`; break;
       default: description = 'Unknown activity';
     }
     text.append(document.createTextNode(description), element('small', '', age(event.receivedAt)));
-    row.append(element('div', 'feed-icon', { boss: 'KC', quest: 'Q', loot: 'GP', chat: 'GIM' }[event.type]), text);
+    row.append(element('div', 'feed-icon', { boss: 'KC', quest: 'Q', diary: 'AD', loot: 'GP', chat: 'GIM' }[event.type]), text);
     return row;
   });
   $('activity-list').replaceChildren(...rows);
@@ -530,8 +582,8 @@ function demoData() {
     })),
     position: { x: 3100 + index * 40, y: 3200 + (index % 3) * 90, plane: 0, world: 444 },
     bankUpdatedAt: now - index * 3600000,
-    bank: [{ id: 385, name: 'Shark', qty: 145 + index * 240 }, { id: 554, name: 'Fire rune', qty: 28000 + index * 175 }, { id: 995, name: 'Coins', qty: 1000000 + index * 53221 },
-      { id: 2347, name: 'Hammer', qty: 1 }],
+    bank: [{ id: 385, name: 'Shark', qty: 145 + index * 240, tab: 1 }, { id: 554, name: 'Fire rune', qty: 28000 + index * 175, tab: 2 },
+      { id: 995, name: 'Coins', qty: 1000000 + index * 53221, tab: 0 }, { id: 2347, name: 'Hammer', qty: 1, tab: 0 }],
   }));
   const xpHistory = Object.fromEntries(names.map((name, index) => {
     const times = [];

@@ -4,7 +4,9 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderStatsCard, withStatsCard } from '../src/statsCard.js';
-import { BRAND, Store, createBridge, validSnapshot, validEvent, validIcons, formatEvent, statsReply, deliverPending, validateMembers, alertChannelIds, validateSkillEmojis, combatLevel } from '../src/bridge.js';
+import { renderKcCard, withKcCards } from '../src/kcCard.js';
+import { bossName, bossIconUrl } from '../src/bosses.js';
+import { BRAND, Store, createBridge, validSnapshot, validEvent, validIcons, formatEvent, statsReply, kcReply, deliverPending, validateMembers, alertChannelIds, validateSkillEmojis, combatLevel } from '../src/bridge.js';
 
 const sharkPng = readFileSync(new URL('../public/demo-icons/385.png', import.meta.url)).toString('base64');
 
@@ -134,11 +136,11 @@ test('Discord acknowledgement persistence failure keeps event queued for retry',
 test('alert types route to their own channels and blank settings fall back to the main channel', async t => {
   const main = '11111111111111111';
   assert.deepEqual(alertChannelIds({ DISCORD_CHANNEL_ID: main }),
-    { loot: main, boss: main, quest: main, chat: main });
+    { loot: main, boss: main, quest: main, diary: main, chat: main });
   assert.deepEqual(alertChannelIds({
     DISCORD_CHANNEL_ID: main, DISCORD_DROPS_CHANNEL_ID: ' 22222222222222222 ',
-    DISCORD_KILLS_CHANNEL_ID: '33333333333333333', DISCORD_QUESTS_CHANNEL_ID: '',
-  }), { loot: '22222222222222222', boss: '33333333333333333', quest: main, chat: main });
+    DISCORD_KILLS_CHANNEL_ID: '33333333333333333', DISCORD_QUESTS_CHANNEL_ID: '44444444444444444',
+  }), { loot: '22222222222222222', boss: '33333333333333333', quest: '44444444444444444', diary: '44444444444444444', chat: main });
   assert.throws(() => alertChannelIds({ DISCORD_CHANNEL_ID: main, DISCORD_DROPS_CHANNEL_ID: '#drops' }),
     /DISCORD_DROPS_CHANNEL_ID/);
   assert.throws(() => alertChannelIds({}), /DISCORD_CHANNEL_ID/);
@@ -276,4 +278,81 @@ test('HTTP integration: private API, bound identity, activity, schema errors and
   await request('/v1/snapshot', { ...snapshot(), observedAt: Date.now() + 1, bankShared: false, bank: null });
   const unshared = await (await request('/v1/group')).json();
   assert.deepEqual(unshared.icons, {});
+});
+
+test('kc command lists saved and observed kill counts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'kc-'));
+  try {
+    const store = new Store(join(dir, 'state.json'));
+    store.state.members['im herp'] = { username: 'IM Herp', killCounts: { zulrah: 120, 'chambers of xeric': 15 } };
+    assert.equal(store.event({ id: 'a', type: 'boss', username: 'IM Herp', boss: 'Zulrah', kc: 121 }), true);
+    assert.equal(store.event({ id: 'b', type: 'loot', username: 'NoLikey', source: 'Lunar Chest', kc: 7,
+      items: [{ id: 995, quantity: 1 }] }), true);
+    const names = ['IM Herp', 'NoLikey'];
+    assert.equal(kcReply('!stats IM Herp', store.state, names, ['IM Herp']), null);
+
+    const own = kcReply('!kc', store.state, names, ['IM Herp']).embeds;
+    assert.equal(own.length, 1);
+    assert.equal(own[0].title, 'IM Herp');
+    assert.match(own[0].description, /^\*\*Zulrah\*\* — 121\n\*\*Chambers of Xeric\*\* — 15/);
+
+    const other = kcReply('!kc nolikey', store.state, names, ['IM Herp']).embeds[0];
+    assert.match(other.description, /Lunar Chests\*\* — 7/);
+
+    const one = kcReply('!kc IM Herp zul', store.state, names, []).embeds[0];
+    assert.equal(one.description, '**Zulrah** — 121\n');
+    assert.equal(kcReply('!kc Zulrah', store.state, names, ['IM Herp']).embeds[0].description, '**Zulrah** — 121\n');
+    assert.match(kcReply('!kc IM Herp Vorkath', store.state, names, []).embeds[0].description, /No kill count found/);
+    assert.match(kcReply('!kc Stranger', store.state, names, []).content, /not in this private group/);
+
+    const reloaded = new Store(join(dir, 'state.json'));
+    assert.equal(reloaded.state.kc['nolikey']['lunar chest'].kc, 7);
+
+    // normalize() turns underscores into spaces, so "__proto__" is stored as the plain key "proto".
+    assert.equal(reloaded.event({ id: 'p', type: 'boss', username: '__proto__', boss: 'Vorkath', kc: 9 }), true);
+    assert.equal(Object.getPrototypeOf(reloaded.state.kc), Object.prototype);
+    assert.equal(reloaded.state.kc.proto.vorkath.kc, 9);
+    assert.equal(reloaded.state.kc['nolikey'].vorkath, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+test('kc card renders boss icons and keeps text when rendering fails', async () => {
+  assert.equal(bossName('chambers of xeric'), 'Chambers of Xeric');
+  assert.equal(bossName('Lunar Chest'), 'Lunar Chests');
+  assert.equal(bossName('some new boss'), 'Some New Boss');
+  assert.match(bossIconUrl("Kree'Arra"), /Kree'arra_icon\.png$/);
+  const icon = async () => readFileSync(new URL('../public/skill-icons/slayer.png', import.meta.url));
+  const card = { username: 'IM Herp', total: 136, counts: [{ boss: 'Zulrah', kc: 121 }, { boss: 'Chambers of Xeric', kc: 15 }] };
+  const png = await renderKcCard(card, icon);
+  assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  const reply = { embeds: [{ author: { name: 'Kill Counts' }, title: 'IM Herp', description: 'list', footer: { text: 'x' } }], cards: [card] };
+  const rendered = await withKcCards(reply, icon);
+  assert.equal(rendered.embeds[0].image.url, 'attachment://kc-0.png');
+  assert.equal(rendered.embeds[0].description, undefined);
+  assert.equal(rendered.files.length, 2);
+  const fallback = await withKcCards(reply, icon, async () => { throw new Error('no canvas'); });
+  assert.equal(fallback.embeds[0].description, 'list');
+});
+
+test('kc merges official hiscore boss counts, keeping the highest', async () => {
+  const { hiscoreLoader } = await import('../src/hiscores.js');
+  let calls = 0;
+  const load = hiscoreLoader(async () => {
+    calls++;
+    return { ok: true, json: async () => ({ activities: [
+      { name: 'Clue Scrolls (all)', score: 11 }, { name: 'Crazy Archaeologist', score: 7 },
+      { name: 'Wintertodt', score: 300 }, { name: 'Zulrah', score: -1 },
+    ] }) };
+  });
+  const counts = await load('IM Herp');
+  assert.deepEqual(counts, { 'Crazy Archaeologist': 7, Wintertodt: 300 });
+  await load('im herp');
+  assert.equal(calls, 1);
+  const state = { members: { 'im herp': { username: 'IM Herp', killCounts: { wintertodt: 349 } } }, kc: {},
+    hiscores: { 'im herp': counts } };
+  const reply = kcReply('!kc', state, ['IM Herp'], ['IM Herp']);
+  assert.deepEqual(reply.cards[0].counts, [{ boss: 'Wintertodt', kc: 349 }, { boss: 'Crazy Archaeologist', kc: 7 }]);
+  const failing = hiscoreLoader(async () => { throw new Error('down'); });
+  assert.deepEqual(await failing('IM Herp'), {});
 });
