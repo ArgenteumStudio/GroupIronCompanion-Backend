@@ -14,7 +14,15 @@ test('geographical projection anchors Lumbridge to the Wiki tile grid, with nort
   assert.equal(tile.left + 44, 300);
   assert.equal(tile.top + 220, 180);
   assert.equal(tileUrl(tileTemplate('2026-10-20_a'), tile, 1, 2),
-    'https://maps.runescape.wiki/osrs/versions/2026-10-20_a/tiles/rendered/0/1/2_25_25.png');
+    'https://maps.runescape.wiki/osrs/versions/2026-10-20_a/tiles/rendered/-1/1/2_25_25.png');
+});
+
+test('Moons of Peril uses combined map tiles rather than the surface-only layer', () => {
+  const tiles = visibleTiles({ x: 1488, y: 9632 }, 2, 600, 360);
+  const tile = tiles.find(tile => tile.x === 23 && tile.y === 150);
+  assert.ok(tile);
+  assert.equal(tileUrl(tileTemplate('2026-10-20_a'), tile, 2, 0),
+    'https://maps.runescape.wiki/osrs/versions/2026-10-20_a/tiles/rendered/-1/2/0_23_150.png');
 });
 
 test('map tiles cover the viewport at every supported zoom without gaps or unbounded requests', () => {

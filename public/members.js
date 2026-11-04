@@ -21,6 +21,7 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
   let members = [];
   let drops = [];
   let cards = new Map();
+  let pendingAnimations = [];
   let generation = 0;
   let controller = null;
   let retryTimer;
@@ -34,13 +35,12 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
 
   function renderCards() {
     const previous = cards;
-    const animations = [...previous.values()].flatMap(({ effects }) =>
-      [...effects.children].map(node => ({ node, time: node.getAnimations()[0]?.currentTime })));
     cards = new Map();
     const nodes = members.map(member => {
-      const card = el('article', 'player-card');
-      const header = el('header', 'player-header');
-      const effects = previous.get(key(member.username))?.effects ?? el('div', 'player-xp-effects');
+      const existing = previous.get(key(member.username));
+      const card = existing?.card ?? el('article', 'player-card');
+      const header = existing?.card.firstElementChild ?? el('header', 'player-header');
+      const effects = existing?.effects ?? el('div', 'player-xp-effects');
       effects.setAttribute('aria-hidden', 'true');
       const badge = el('div', 'player-badge', member.username.slice(0, 2).toUpperCase());
       const identity = el('div', 'player-identity');
@@ -48,7 +48,10 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
       identity.append(el('h3', '', member.username));
       const presence = el('span', 'player-presence');
       identity.append(presence);
-      header.append(badge, identity, effects);
+      if (existing) {
+        header.children[0].replaceWith(badge);
+        header.children[1].replaceWith(identity);
+      } else header.append(badge, identity, effects);
       const stats = Object.values(member.stats);
       const summary = el('div', 'player-summary');
       for (const [label, value] of [
@@ -60,7 +63,7 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
         metric.append(el('span', '', label), el('strong', '', number(value)));
         summary.append(metric);
       }
-      const activity = el('div', 'player-training');
+      const activity = existing?.activity ?? el('div', 'player-training');
       const skillsHeading = el('div', 'player-skills-heading');
       skillsHeading.append(el('span', '', 'Skill overview'),
         el('span', '', `${Object.keys(member.stats).length} skills`));
@@ -89,17 +92,29 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
         cell.append(tooltip);
         grid.append(cell);
       }
-      card.append(header, summary, activity, skillsHeading, grid);
+      if (existing) {
+        card.children[1].replaceWith(summary);
+        card.children[3].replaceWith(skillsHeading);
+        card.children[4].replaceWith(grid);
+      } else card.append(header, summary, activity, skillsHeading, grid);
       cards.set(key(member.username), { card, presence, activity, effects, member });
       return card;
     });
-    container.replaceChildren(...nodes);
-    for (const { node, time } of animations) {
-      const animation = node.getAnimations()[0];
-      if (animation && time != null) animation.currentTime = time;
+    const retained = new Set(nodes);
+    for (const child of [...container.children]) {
+      if (!retained.has(child)) child.remove();
     }
+    nodes.forEach((node, index) => {
+      if (container.children[index] !== node) container.insertBefore(node, container.children[index] ?? null);
+    });
     if (!nodes.length) container.append(el('p', 'empty', 'Ready for your group. Log in with the RuneLite plugin to sync your first member.'));
     renderActivity();
+    pendingAnimations = pendingAnimations.filter(drop => {
+      if (now() - drop.receivedAt >= 15000) return false;
+      if (!cards.has(key(drop.username))) return true;
+      animateDrop(drop);
+      return false;
+    });
   }
 
   function renderActivity() {
@@ -118,9 +133,12 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
         : `Last synced ${lastSync} ago`;
       const live = drops.filter(drop => key(drop.username) === key(member.username) && time - drop.receivedAt < 15000);
       const latest = live.at(-1);
-      activity.replaceChildren();
+      const signature = JSON.stringify([fresh, latest?.id]);
       activity.classList.toggle('is-training', Boolean(latest));
       card.querySelectorAll('.player-skill').forEach(cell => cell.classList.toggle('training', cell.dataset.skill === latest?.skill));
+      if (activity.dataset.state === signature) continue;
+      activity.dataset.state = signature;
+      activity.replaceChildren();
       if (latest) {
         const label = el('div', 'training-label');
         label.append(el('span', '', 'TRAINING NOW'), el('strong', '', skillName(latest.skill)));
@@ -137,7 +155,10 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
 
   function animateDrop(drop) {
     const layer = cards.get(key(drop.username))?.effects;
-    if (!layer) return;
+    if (!layer) {
+      pendingAnimations.push(drop);
+      return;
+    }
     const effect = el('span', 'player-xp-float');
     effect.append(icon(drop.skill), el('b', '', `+${number(drop.amount)}`));
     while (layer.childElementCount >= 4) layer.firstElementChild.remove();
@@ -151,6 +172,7 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
   function accept(batch) {
     anchor(batch.serverTime);
     if (batch.reset) drops = [];
+    if (batch.reset) pendingAnimations = [];
     const existing = new Set(drops.map(drop => `${key(drop.username)}:${drop.id}`));
     for (const drop of batch.drops) {
       if (!SKILLS.includes(drop.skill)) continue;
@@ -158,7 +180,7 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
       if (existing.has(id)) continue;
       existing.add(id);
       drops.push(drop);
-      if (!batch.reset && now() - drop.receivedAt < 5000) animateDrop(drop);
+      if (!batch.reset && now() - drop.receivedAt < 15000) animateDrop(drop);
     }
     cursor = batch.cursor;
     renderActivity();
@@ -206,6 +228,7 @@ export function initMembers({ container, status, authHeader, onUnauthorized }) {
     clearInterval(demoTimer);
     members = [];
     drops = [];
+    pendingAnimations = [];
     cursor = '';
     cards.clear();
     container.replaceChildren();

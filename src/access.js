@@ -10,34 +10,54 @@ export function validateDiscordMembers(members) {
   validateMembers(members, { discord: true });
 }
 
-export function discordMembership(discord, guildId) {
-  return async discordId => {
+// Resolves a guild member (or null when they are not in the server). Concurrent lookups share one
+// Discord request, and confirmed members are reused for ttlMillis so every dashboard request does not
+// wait on Discord's rate-limited REST API. Absent members and errors are never cached.
+export function discordMemberLookup(discord, guildId, { ttlMillis = 0, now = Date.now } = {}) {
+  const cached = new Map();
+  const inflight = new Map();
+  const generation = new Map();
+  const lookup = async discordId => {
     if (!discord.isReady()) throw new Error('Discord is disconnected');
     const guild = discord.guilds.cache.get(guildId);
     if (!guild || !guild.available) throw new Error('Configured Discord server is unavailable');
-    try {
-      await guild.members.fetch({ user: discordId, force: true, cache: false });
-      return true;
-    } catch (error) {
-      if (error.code === 10007) return false; // Discord's Unknown Member response.
-      throw error;
-    }
+    const hit = cached.get(discordId);
+    if (hit && hit.expires > now()) return hit.member;
+    cached.delete(discordId);
+    if (inflight.has(discordId)) return inflight.get(discordId);
+    const started = generation.get(discordId) ?? 0;
+    const request = (async () => {
+      try {
+        await null; // Ensure `request` is assigned before the finally block can run.
+        const member = await guild.members.fetch({ user: discordId, force: true, cache: false });
+        if (ttlMillis > 0 && (generation.get(discordId) ?? 0) === started) {
+          cached.set(discordId, { member, expires: now() + ttlMillis });
+        }
+        return member;
+      } catch (error) {
+        if (error.code === 10007) return null; // Discord's Unknown Member response.
+        throw error;
+      } finally {
+        if (inflight.get(discordId) === request) inflight.delete(discordId);
+      }
+    })();
+    inflight.set(discordId, request);
+    return request;
   };
+  lookup.invalidate = discordId => {
+    generation.set(discordId, (generation.get(discordId) ?? 0) + 1);
+    cached.delete(discordId);
+    inflight.delete(discordId);
+  };
+  return lookup;
 }
 
-export function discordAdmin(discord, guildId) {
-  return async discordId => {
-    if (!discord.isReady()) throw new Error('Discord is disconnected');
-    const guild = discord.guilds.cache.get(guildId);
-    if (!guild || !guild.available) throw new Error('Configured Discord server is unavailable');
-    try {
-      const member = await guild.members.fetch({ user: discordId, force: true, cache: false });
-      return member.permissions.has('ManageGuild');
-    } catch (error) {
-      if (error.code === 10007) return false;
-      throw error;
-    }
-  };
+export function discordMembership(discord, guildId, lookup = discordMemberLookup(discord, guildId)) {
+  return async discordId => await lookup(discordId) !== null;
+}
+
+export function discordAdmin(discord, guildId, lookup = discordMemberLookup(discord, guildId)) {
+  return async discordId => (await lookup(discordId))?.permissions.has('ManageGuild') === true;
 }
 
 export class DiscordAccess {

@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Store, createBridge } from '../src/bridge.js';
-import { DiscordAccess, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from '../src/access.js';
+import { DiscordAccess, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from '../src/access.js';
 
 const id = '123456789012345678';
 const members = [{ name: 'Test Player', discordId: id }];
@@ -158,6 +158,52 @@ test('fresh membership checks fail closed on disconnect, unavailable guild and D
   ready = true;
   guild.available = false;
   await assert.rejects(check(id), /server is unavailable/);
+});
+
+test('Discord member lookup shares requests, caches confirmed members and honours invalidation', async () => {
+  let clock = 0;
+  let calls = 0;
+  let absent = false;
+  let release;
+  let gate = Promise.resolve();
+  const member = { permissions: { has: permission => permission === 'ManageGuild' } };
+  const guild = { available: true, members: { async fetch() {
+    calls++;
+    await gate;
+    if (absent) throw Object.assign(new Error('Unknown member'), { code: 10007 });
+    return member;
+  } } };
+  const discord = { isReady: () => true, guilds: { cache: new Map([['guild', guild]]) } };
+  const lookup = discordMemberLookup(discord, 'guild', { ttlMillis: 30_000, now: () => clock });
+  const isMember = discordMembership(discord, 'guild', lookup);
+  const isAdmin = discordAdmin(discord, 'guild', lookup);
+
+  gate = new Promise(resolve => { release = resolve; });
+  const pending = Promise.all([isMember(id), isAdmin(id), isMember(id)]);
+  release();
+  assert.deepEqual(await pending, [true, true, true]);
+  assert.equal(calls, 1, 'concurrent checks share one Discord request');
+  assert.equal(await isAdmin(id), true);
+  assert.equal(calls, 1, 'confirmed members are served from cache');
+
+  clock = 30_000;
+  assert.equal(await isMember(id), true);
+  assert.equal(calls, 2, 'cache expires after the TTL');
+
+  lookup.invalidate(id);
+  absent = true;
+  assert.equal(await isMember(id), false);
+  assert.equal(await isMember(id), false);
+  assert.equal(calls, 4, 'absent members are not cached');
+
+  absent = false;
+  gate = new Promise(resolve => { release = resolve; });
+  const stale = isMember(id);
+  lookup.invalidate(id);
+  release();
+  assert.equal(await stale, true);
+  assert.equal(await isMember(id), true);
+  assert.equal(calls, 6, 'a lookup invalidated while in flight is not cached');
 });
 
 test('bot responds publicly without exposing the key or sensitive Discord error payloads', async t => {

@@ -76,6 +76,12 @@ Administrators are responsible for managing stored group data and access.
 
 ## Tests and fictional preview
 
+The location map uses the OSRS Wiki's combined map layer so surface and
+underground locations, including Moons of Peril, can display geographical tiles.
+Member-card XP animations stay attached during dashboard refreshes. Recent
+delayed drops remain eligible for display for 15 seconds after server receipt;
+historical events received when first connecting are not replayed as live drops.
+
 Run the backend tests from this repository's root:
 
 ```powershell

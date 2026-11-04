@@ -13,7 +13,7 @@ const PROBE_URL = 'https://oldschool.runescape.wiki/api.php?action=parse&format=
 export const validMapVersion = value => typeof value === 'string' && VERSION.test(value);
 
 export function tileTemplate(version) {
-  return `${MAP_TILE_ORIGIN}/osrs/versions/${version}/tiles/rendered/0/{z}/{p}_{x}_{y}.png`;
+  return `${MAP_TILE_ORIGIN}/osrs/versions/${version}/tiles/rendered/-1/{z}/{p}_{x}_{y}.png`;
 }
 
 export function createWorldMap({ env = process.env, fetchImpl = globalThis.fetch, now = Date.now, logger = console } = {}) {

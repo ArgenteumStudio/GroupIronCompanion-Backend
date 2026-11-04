@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { BRAND, Store, allCharacters, createBridge, deliverPending, statsReply, alertChannelIds, validateSkillEmojis } from './bridge.js';
-import { DiscordAccess, discordAdmin, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from './access.js';
+import { DiscordAccess, discordAdmin, discordMemberLookup, discordMembership, linksCommand, validateDiscordMembers, verifyCommand } from './access.js';
 import { withStatsCard } from './statsCard.js';
 import { createWorldMap } from './worldMap.js';
 import { alertMessage, spriteLoader } from './alertEmbed.js';
@@ -26,13 +26,18 @@ const discord = new Client({
     GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
   allowedMentions: { parse: [], repliedUser: false },
 });
+const memberLookup = discordMemberLookup(discord, process.env.DISCORD_GUILD_ID, { ttlMillis: 30_000 });
 const access = new DiscordAccess({
   store, members,
-  isMember: discordMembership(discord, process.env.DISCORD_GUILD_ID),
-  isAdmin: discordAdmin(discord, process.env.DISCORD_GUILD_ID),
+  isMember: discordMembership(discord, process.env.DISCORD_GUILD_ID, memberLookup),
+  isAdmin: discordAdmin(discord, process.env.DISCORD_GUILD_ID, memberLookup),
+});
+discord.on(Events.GuildMemberUpdate, (_, member) => {
+  if (member.guild.id === process.env.DISCORD_GUILD_ID) memberLookup.invalidate(member.id);
 });
 discord.on(Events.GuildMemberRemove, member => {
   if (member.guild.id !== process.env.DISCORD_GUILD_ID) return;
+  memberLookup.invalidate(member.id);
   try {
     access.revoke(member.id);
   } catch (error) {
