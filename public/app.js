@@ -7,6 +7,7 @@ import { initBankTooltips } from './bank-tooltips.js';
 import { tabSession } from './tab-session.js';
 import { bankSummary, itemBankInfo } from './bank-info.js';
 import { initMemberAccess } from './member-access.js';
+import { bankTabCollapse } from './bank-tab-collapse.js';
 
 const $ = id => document.getElementById(id);
 const worldMap = initWorldMap({
@@ -102,6 +103,7 @@ function lock() {
   worldMap.clear();
   memberCards.clear();
   bankTooltips.hide();
+  collapsedBankTabs.clear();
   showView(false);
   $('dashboard').hidden = true;
   $('login').hidden = false;
@@ -321,6 +323,7 @@ $('xp-ranges').addEventListener('click', event => {
   void loadXp();
 });
 const bankTabs = new Map();
+const collapsedBankTabs = bankTabCollapse();
 // Mirrors the in-game tab bar: an "all items" tab, then each numbered tab drawn with its first item.
 function bankTabStrip(member) {
   const firsts = new Map();
@@ -340,6 +343,7 @@ function bankTabStrip(member) {
     button.setAttribute('aria-selected', String(value === selected));
     button.setAttribute('aria-label', label);
     button.title = label;
+    if (value != null) collapsedBankTabs.bind(button, member.username, value, renderBank);
     const encoded = item && (data.icons?.[item.id] ? `data:image/png;base64,${data.icons[item.id]}`
       : mode === 'demo' ? `/demo-icons/${item.id}.png` : null);
     if (encoded) {
@@ -390,8 +394,15 @@ function renderBank() {
       if (selectedTab != null && item.tab !== selectedTab) continue;
       if (selectedTab == null && item.tab != null && item.tab !== currentTab) {
         currentTab = item.tab;
-        grid.append(element('div', 'bank-tab-heading', item.tab === 0 ? 'Untabbed' : `Tab ${item.tab}`));
+        const collapsed = collapsedBankTabs.isCollapsed(member.username, item.tab);
+        const tabHeading = element('button', 'bank-tab-heading',
+          `${collapsed ? '\u25b6' : '\u25bc'} ${item.tab === 0 ? 'Untabbed' : `Tab ${item.tab}`}`);
+        tabHeading.type = 'button';
+        tabHeading.title = item.tab === 0 ? 'Untabbed' : `Tab ${item.tab}`;
+        collapsedBankTabs.bind(tabHeading, member.username, item.tab, renderBank);
+        grid.append(tabHeading);
       }
+      if (item.tab != null && collapsedBankTabs.isCollapsed(member.username, item.tab)) continue;
       count++;
       visibleItems.push(item);
       bankItems.push(item);
@@ -432,7 +443,9 @@ function renderBank() {
       section.append(heading);
       if (tabStrip) section.append(tabStrip);
       section.append(grid);
-      if (!grid.childElementCount) grid.append(element('p', 'muted', tabStrip && (query || selectedTab != null)
+      if (!grid.childElementCount) grid.append(element('p', 'muted',
+        selectedTab != null && collapsedBankTabs.isCollapsed(member.username, selectedTab)
+        ? 'Tab collapsed. Right-click its tab to expand.' : tabStrip && (query || selectedTab != null)
         ? 'No matching items in this tab.' : 'This saved storage is empty.'));
       const values = bankSummary(bankItems);
       section.insertBefore(element('p', 'bank-owner-values', `GE ${values.ge} / High alch ${values.alch}`), grid);

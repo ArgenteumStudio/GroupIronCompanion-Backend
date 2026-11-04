@@ -1,7 +1,7 @@
 # Group Iron Companion Backend
 
 The self-hosted server, web dashboard and Discord bot for
-[Group Iron Companion](https://github.com/ArgenteumStudio/MayoClan).
+[Group Iron Companion](https://github.com/ArgenteumStudio/Group-Iron-Companion).
 This repository is for clan administrators hosting the service. Clan members
 install the RuneLite plugin and use the server URL and individual character
 token supplied by their administrator.
@@ -57,6 +57,11 @@ Copy-Item branding.example.json branding.json
 Use the web panel to manage members, permissions, website colors, branding and
 Discord message styles. The bot posts enabled game alerts to the configured
 Discord channels; authorized users can use `!stats <player>` for synced stats.
+`!kc`, `!kc <player>` and `!kc <boss>` combine shared saved/observed boss kill
+counts with official hiscores. Achievement diary tiers use the quest-alert
+channel. Lunar Chest openings use loot alerts rather than separate boss alerts.
+The bank viewer shows real bank tabs after a new tab-aware bank snapshot.
+Right-click a numbered tab or its heading to collapse/expand its items.
 
 ## Hosting and private data
 

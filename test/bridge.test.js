@@ -268,7 +268,7 @@ test('HTTP integration: private API, bound identity, activity, schema errors and
   assert.equal(group.icons[385], sharkPng);
   assert.equal(group.groupSize, 2);
   assert.equal(JSON.stringify(group).includes(members[0].token), false);
-  for (const path of ['/', '/app.js', '/style.css', '/theme.css', '/logo', '/demo-icons/385.png']) {
+  for (const path of ['/', '/app.js', '/bank-tab-collapse.js', '/style.css', '/theme.css', '/logo', '/demo-icons/385.png']) {
     const response = await fetch(base + path);
     assert.equal(response.status, 200);
     assert.ok(response.headers.get('content-security-policy').includes("script-src 'self'"));

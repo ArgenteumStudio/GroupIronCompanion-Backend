@@ -329,6 +329,7 @@ export function createBridge({ store, members, access, isAdmin = member => acces
         '/tab-session.js': ['tab-session.js', 'text/javascript; charset=utf-8'],
         '/member-access.js': ['member-access.js', 'text/javascript; charset=utf-8'],
         '/bank-info.js': ['bank-info.js', 'text/javascript; charset=utf-8'],
+        '/bank-tab-collapse.js': ['bank-tab-collapse.js', 'text/javascript; charset=utf-8'],
         '/members.css': ['members.css', 'text/css; charset=utf-8'],
         '/skills.js': ['skills.js', 'text/javascript; charset=utf-8'],
         '/style.css': ['style.css', 'text/css; charset=utf-8'],
