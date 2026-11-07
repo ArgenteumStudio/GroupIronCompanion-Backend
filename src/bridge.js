@@ -53,6 +53,13 @@ function validKillCounts(value) {
   return entries.length <= 500 && entries.every(([boss, kc]) => text(boss, 80) && integer(kc, 2147483647));
 }
 
+function validBorrowedItems(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= 100 && entries.every(([id, quantity]) =>
+    /^[1-9]\d{0,6}$/.test(id) && Number(id) <= 1000000 && integer(quantity, 2147483647) && quantity > 0);
+}
+
 export function validSnapshot(body) {
   if (!body || !validName(body.username) || !body.stats ||
       typeof body.stats !== 'object' || Array.isArray(body.stats)) return false;
@@ -68,6 +75,9 @@ export function validSnapshot(body) {
   if (typeof body.bankShared !== 'boolean') return false;
   if (body.questPoints != null && !integer(body.questPoints, 1000)) return false;
   if (body.killCounts != null && !validKillCounts(body.killCounts)) return false;
+  if (Object.hasOwn(body, 'borrowedItemsShared') &&
+      (typeof body.borrowedItemsShared !== 'boolean' ||
+        (body.borrowedItemsShared ? !validBorrowedItems(body.borrowedItems) : body.borrowedItems != null))) return false;
   if (body.groupStorage != null && (!itemsValid(body.groupStorage) ||
       !integer(body.groupStorageUpdatedAt) || body.groupStorageUpdatedAt > body.observedAt)) return false;
   return body.bank === null || (itemsValid(body.bank) && integer(body.bankUpdatedAt) &&
@@ -182,6 +192,12 @@ export class Store {
       groupStorageUpdatedAt: !body.bankShared ? null :
         body.groupStorage != null && body.groupStorageUpdatedAt > (previous?.groupStorageUpdatedAt ?? -1)
           ? body.groupStorageUpdatedAt : previous?.groupStorageUpdatedAt ?? null,
+      borrowedItemsShared: Object.hasOwn(body, 'borrowedItemsShared')
+        ? body.borrowedItemsShared : previous?.borrowedItemsShared ?? false,
+      borrowedItems: Object.hasOwn(body, 'borrowedItemsShared')
+        ? (body.borrowedItemsShared ? body.borrowedItems : null) : previous?.borrowedItems ?? null,
+      borrowedItemsUpdatedAt: Object.hasOwn(body, 'borrowedItemsShared')
+        ? (body.borrowedItemsShared ? body.observedAt : null) : previous?.borrowedItemsUpdatedAt ?? null,
     };
     try {
       this.save();
@@ -503,6 +519,9 @@ export function createBridge({ store, members, access, isAdmin = member => acces
             position: permissions.locations ? value.position : null,
             bank: permissions.banks ? value.bank : null,
             bankUpdatedAt: permissions.banks ? value.bankUpdatedAt : null,
+            borrowedItems: permissions.storage && value.borrowedItemsShared &&
+              value.borrowedItemsUpdatedAt != null && Date.now() - value.borrowedItemsUpdatedAt <= 120000
+                ? value.borrowedItems : null,
           })),
           groupStorage: permissions.storage && shared ? { items: shared.groupStorage, updatedAt: shared.groupStorageUpdatedAt, username: shared.username } : null,
           icons: store.icons([

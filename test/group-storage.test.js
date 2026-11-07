@@ -36,6 +36,63 @@ test('storage persistence preserves capture time, ignores older captures and cle
   loaded.snapshot(snapshot({ observedAt: body.observedAt + 3, bankShared: false }));
   assert.equal(loaded.state.members['player one'].groupStorage, null);
 });
+test('borrowed item sharing is validated, persisted, and cleared when a member opts out', t => {
+  const store = setup(t);
+  const borrowed = { 385: 4, 995: 1200 };
+  const body = snapshot({ borrowedItemsShared: true, borrowedItems: borrowed });
+  assert.equal(validSnapshot(body), true);
+  for (const invalid of [
+    { borrowedItems: null },
+    { borrowedItems: { 0: 1 } },
+    { borrowedItems: { 385: 0 } },
+    { borrowedItems: { 385: -1 } },
+    { borrowedItems: { 385: '4' } },
+    { borrowedItems: [] },
+  ]) {
+    assert.equal(validSnapshot({ ...body, ...invalid }), false);
+  }
+  store.snapshot(body);
+  assert.deepEqual(store.state.members['player one'].borrowedItems, borrowed);
+  assert.equal(store.state.members['player one'].borrowedItemsShared, true);
+
+  store.snapshot(snapshot({ observedAt: body.observedAt + 1, borrowedItemsShared: false, borrowedItems: null }));
+  assert.equal(store.state.members['player one'].borrowedItemsShared, false);
+  assert.equal(store.state.members['player one'].borrowedItems, null);
+});
+test('group endpoint returns only fresh, explicitly shared borrower quantities', async t => {
+  const store = setup(t);
+  const members = [{
+    name: 'Player One', token: 'a'.repeat(64), memberTokenId: 'viewer', permissions: { storage: true },
+  }];
+  const server = createBridge({ store, members });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.close(); server.closeAllConnections(); });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const postSnapshot = body => fetch(base + '/v1/snapshot', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${members[0].token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const first = snapshot({ borrowedItemsShared: true, borrowedItems: { 385: 4 } });
+  assert.equal((await postSnapshot(first)).status, 200);
+  let group = await (await fetch(base + '/v1/group', {
+    headers: { Authorization: `Bearer ${members[0].token}` },
+  })).json();
+  assert.deepEqual(group.members[0].borrowedItems, { 385: 4 });
+
+  store.state.members['player one'].borrowedItemsUpdatedAt = Date.now() - 121000;
+  group = await (await fetch(base + '/v1/group', {
+    headers: { Authorization: `Bearer ${members[0].token}` },
+  })).json();
+  assert.equal(group.members[0].borrowedItems, null, 'Stale borrower state must not look current');
+
+  members[0].permissions.storage = false;
+  group = await (await fetch(base + '/v1/group', {
+    headers: { Authorization: `Bearer ${members[0].token}` },
+  })).json();
+  assert.equal(group.members[0].borrowedItems, null, 'Members without storage permission must not see borrower data');
+  assert.equal(group.groupStorage, null, 'Members without storage permission must not see group storage');
+});
 test('failed storage persistence rolls back the full snapshot and XP history', t => {
   const store = setup(t), first = snapshot();
   store.snapshot(first);
